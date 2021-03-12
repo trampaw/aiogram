@@ -10,6 +10,7 @@ import aioredis
 
 from ...dispatcher.storage import BaseStorage
 from ...utils import json
+from ...utils.exceptions import NetworkError
 
 STATE_KEY = 'state'
 STATE_DATA_KEY = 'data'
@@ -249,10 +250,19 @@ class RedisStorage2(BaseStorage):
         # Use thread-safe asyncio Lock because this method without that is not safe
         async with self._connection_lock:
             if self._redis is None or self._redis.closed:
-                self._redis = await aioredis.create_redis_pool((self._host, self._port),
-                                                               db=self._db, password=self._password, ssl=self._ssl,
-                                                               minsize=1, maxsize=self._pool_size,
-                                                               loop=self._loop, **self._kwargs)
+                try:
+                    self._redis = await aioredis.create_redis_pool(
+                        (self._host, self._port),
+                        db=self._db,
+                        password=self._password,
+                        ssl=self._ssl,
+                        minsize=1,
+                        maxsize=self._pool_size,
+                        loop=self._loop,
+                        **self._kwargs,
+                    )
+                except (ConnectionRefusedError, Exception) as e:
+                    raise NetworkError(f"Redis is unavailable: {e}")
         return self._redis
 
     def generate_key(self, *parts):
